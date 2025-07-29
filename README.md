@@ -1,1 +1,1 @@
-# cs687-capstone
+# AskDocAI
