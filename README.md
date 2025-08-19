@@ -25,5 +25,5 @@ OPENAI_API_KEY=your_api_key_here
 ```
 
 ## Usage
-1. Backend runs on: http://127.0.0.1:5000
-2. Frontend runs on: http://127.0.0.1:3000
+1. Backend runs on: http://localhost:5000
+2. Frontend runs on: http://localhost:3000
