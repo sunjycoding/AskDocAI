@@ -10,25 +10,43 @@ function App() {
   const [loading, setLoading] = useState(false);
   const [activeTab, setActiveTab] = useState('upload');
 
-  // Mock API calls for demo
+  // Real API call to backend
   const handleFileUpload = async (event) => {
     const file = event.target.files[0];
     if (file && file.type === 'application/pdf') {
       setSelectedFile(file);
       setLoading(true);
-
-      // Simulate upload delay
-      setTimeout(() => {
-        setUploadedDoc({
-          id: 'demo-doc-123',
-          filename: file.name,
-          content_length: 15420,
-          created_at: new Date().toISOString(),
-          content_preview: 'This is a preview of the uploaded document content. The document contains technical information about machine learning concepts and implementation strategies...'
+      
+      try {
+        const formData = new FormData();
+        formData.append('file', file);
+        
+        const response = await fetch('http://127.0.0.1:5000/api/upload', {
+          method: 'POST',
+          body: formData,
         });
+        
+        if (response.ok) {
+          const data = await response.json();
+          setUploadedDoc({
+            id: data.document_id,
+            filename: data.filename,
+            content_length: data.content_length,
+            created_at: new Date().toISOString(),
+            content_preview: data.content_preview
+          });
+          setActiveTab('summary');
+          alert('Document uploaded successfully!');
+        } else {
+          const errorData = await response.json();
+          alert(`Upload failed: ${errorData.error}`);
+        }
+      } catch (error) {
+        console.error('Upload error:', error);
+        alert(`Network error: ${error.message}. Please make sure the backend is running on http://127.0.0.1:5000`);
+      } finally {
         setLoading(false);
-        setActiveTab('summary');
-      }, 2000);
+      }
     } else {
       alert('Please select a PDF file');
     }
@@ -36,29 +54,31 @@ function App() {
 
   const generateSummary = async () => {
     if (!uploadedDoc) return;
-
+    
     setLoading(true);
-    setTimeout(() => {
-      setSummary(`**Document Summary for "${uploadedDoc.filename}"**
-
-This document provides a comprehensive overview of machine learning fundamentals and implementation strategies. Key topics include:
-
-• **Core Concepts**: The document explains fundamental ML algorithms including supervised and unsupervised learning approaches, with detailed explanations of decision trees, neural networks, and clustering methods.
-
-• **Implementation Guidelines**: Practical guidance for implementing ML models using Python libraries such as scikit-learn, TensorFlow, and PyTorch, including code examples and best practices.
-
-• **Performance Optimization**: Strategies for model evaluation, hyperparameter tuning, and performance metrics to ensure optimal results in real-world applications.
-
-• **Case Studies**: Real-world examples demonstrating successful ML implementations across various industries including healthcare, finance, and technology sectors.
-
-The document emphasizes the importance of data preprocessing, feature engineering, and proper validation techniques for building robust machine learning solutions.`);
+    try {
+      const response = await fetch(`http://127.0.0.1:5000/api/document/${uploadedDoc.id}/content`, {
+        method: 'GET',
+      });
+      
+      if (response.ok) {
+        const data = await response.json();
+        setSummary(data.content); // 直接把提取的内容设置为summary
+      } else {
+        const errorData = await response.json();
+        alert(`Failed to get document content: ${errorData.error}`);
+      }
+    } catch (error) {
+      console.error('Error fetching document content:', error);
+      alert('Network error occurred while fetching document content.');
+    } finally {
       setLoading(false);
-    }, 1500);
+    }
   };
 
   const askQuestion = async () => {
     if (!question.trim() || !uploadedDoc) return;
-
+    
     setLoading(true);
     setTimeout(() => {
       setAnswer(`Based on the uploaded document "${uploadedDoc.filename}", here's the answer to your question:
@@ -81,10 +101,11 @@ The document emphasizes the importance of data preprocessing, feature engineerin
   const TabButton = ({ id, label, icon: Icon, isActive, onClick }) => (
     <button
       onClick={() => onClick(id)}
-      className={`flex items-center space-x-2 px-6 py-3 rounded-lg font-medium transition-all duration-200 ${isActive
-        ? 'bg-blue-600 text-white shadow-lg transform scale-105'
-        : 'bg-white text-gray-600 hover:bg-gray-50 hover:text-blue-600 shadow-md'
-        }`}
+      className={`flex items-center space-x-2 px-6 py-3 rounded-lg font-medium transition-all duration-200 ${
+        isActive
+          ? 'bg-blue-600 text-white shadow-lg transform scale-105'
+          : 'bg-white text-gray-600 hover:bg-gray-50 hover:text-blue-600 shadow-md'
+      }`}
     >
       <Icon size={20} />
       <span>{label}</span>
@@ -148,7 +169,7 @@ The document emphasizes the importance of data preprocessing, feature engineerin
               {activeTab === 'upload' && (
                 <div className="space-y-6">
                   <h2 className="text-2xl font-bold text-gray-800 mb-4">Upload Your Document</h2>
-
+                  
                   <div className="border-2 border-dashed border-gray-300 rounded-lg p-8 text-center hover:border-blue-400 transition-colors">
                     <Upload size={48} className="mx-auto text-gray-400 mb-4" />
                     <div className="space-y-2">
@@ -170,7 +191,9 @@ The document emphasizes the importance of data preprocessing, feature engineerin
                   {loading && (
                     <div className="flex items-center justify-center py-8">
                       <Loader2 className="animate-spin text-blue-600 mr-3" size={24} />
-                      <span className="text-lg text-gray-600">Processing your document...</span>
+                      <span className="text-lg text-gray-600">
+                        {uploadedDoc ? 'Processing your document...' : 'Uploading and processing your document...'}
+                      </span>
                     </div>
                   )}
 
@@ -217,9 +240,9 @@ The document emphasizes the importance of data preprocessing, feature engineerin
                   )}
 
                   {summary && (
-                    <div className="bg-gray-50 rounded-lg p-6">
+                    <div className="bg-gray-50 rounded-lg p-6 max-h-96 overflow-y-auto">
                       <div className="prose max-w-none">
-                        <div className="whitespace-pre-line text-gray-800 leading-relaxed">
+                        <div className="whitespace-pre-wrap text-gray-800 leading-relaxed text-sm">
                           {summary}
                         </div>
                       </div>
