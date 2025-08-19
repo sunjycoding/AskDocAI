@@ -8,7 +8,7 @@ import uuid
 from datetime import datetime
 
 app = Flask(__name__)
-CORS(app)
+CORS(app, origins=['http://127.0.0.1:3000', 'http://127.0.0.1:3000'])
 
 # In-memory storage for demo
 documents = {}
