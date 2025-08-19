@@ -9,6 +9,11 @@ function App() {
   const [answer, setAnswer] = useState('');
   const [loading, setLoading] = useState(false);
   const [activeTab, setActiveTab] = useState('upload');
+  const [systemStatus, setSystemStatus] = useState({
+    backend: 'checking',
+    ai: 'demo',
+    storage: 'ready'
+  });
 
   // Real API call to backend
   const handleFileUpload = async (event) => {
@@ -97,6 +102,30 @@ function App() {
       setLoading(false);
     }, 2000);
   };
+
+  // Check backend status
+  const checkBackendStatus = async () => {
+    try {
+      const response = await fetch('http://127.0.0.1:5000/api/health', {
+        method: 'GET'
+      });
+      
+      if (response.ok) {
+        setSystemStatus(prev => ({ ...prev, backend: 'online' }));
+      } else {
+        setSystemStatus(prev => ({ ...prev, backend: 'offline' }));
+      }
+    } catch (error) {
+      setSystemStatus(prev => ({ ...prev, backend: 'offline' }));
+    }
+  };
+
+  // Check status on component mount and periodically
+  React.useEffect(() => {
+    checkBackendStatus();
+    const interval = setInterval(checkBackendStatus, 30000); // Check every 30 seconds
+    return () => clearInterval(interval);
+  }, []);
 
   const TabButton = ({ id, label, icon: Icon, isActive, onClick }) => (
     <button
@@ -333,17 +362,61 @@ function App() {
             <div className="bg-white rounded-xl shadow-lg p-6">
               <h3 className="text-lg font-semibold text-gray-800 mb-4">Quick Actions</h3>
               <div className="space-y-3">
-                <button className="w-full text-left px-4 py-3 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors">
+                <button 
+                  onClick={() => {
+                    if (uploadedDoc) {
+                      const sampleQuestions = [
+                        "What are the main topics discussed in this document?",
+                        "Can you explain the key concepts mentioned?",
+                        "What are the important conclusions or findings?",
+                        "Are there any specific recommendations or guidelines?"
+                      ];
+                      const randomQuestion = sampleQuestions[Math.floor(Math.random() * sampleQuestions.length)];
+                      setQuestion(randomQuestion);
+                      setActiveTab('qa');
+                    } else {
+                      alert('Please upload a document first.');
+                    }
+                  }}
+                  className="w-full text-left px-4 py-3 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors"
+                >
                   <div className="font-medium text-gray-800">Sample Questions</div>
-                  <div className="text-sm text-gray-600">View example questions</div>
+                  <div className="text-sm text-gray-600">Get question ideas</div>
                 </button>
-                <button className="w-full text-left px-4 py-3 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors">
-                  <div className="font-medium text-gray-800">Export Results</div>
-                  <div className="text-sm text-gray-600">Download Q&A history</div>
+                <button 
+                  onClick={() => {
+                    if (summary && uploadedDoc) {
+                      const blob = new Blob([summary], { type: 'text/plain' });
+                      const url = URL.createObjectURL(blob);
+                      const a = document.createElement('a');
+                      a.href = url;
+                      a.download = `${uploadedDoc.filename}_extracted_content.txt`;
+                      a.click();
+                      URL.revokeObjectURL(url);
+                    } else {
+                      alert('Please generate summary first.');
+                    }
+                  }}
+                  className="w-full text-left px-4 py-3 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors"
+                >
+                  <div className="font-medium text-gray-800">Export Content</div>
+                  <div className="text-sm text-gray-600">Download extracted text</div>
                 </button>
-                <button className="w-full text-left px-4 py-3 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors">
-                  <div className="font-medium text-gray-800">Clear Session</div>
-                  <div className="text-sm text-gray-600">Start over with new document</div>
+                <button 
+                  onClick={() => {
+                    if (window.confirm('This will clear the current session. Are you sure?')) {
+                      setSelectedFile(null);
+                      setUploadedDoc(null);
+                      setSummary('');
+                      setQuestion('');
+                      setAnswer('');
+                      setActiveTab('upload');
+                    }
+                  }}
+                  className="w-full text-left px-4 py-3 bg-red-50 rounded-lg hover:bg-red-100 transition-colors"
+                >
+                  <div className="font-medium text-red-800">Clear Session</div>
+                  <div className="text-sm text-red-600">Start over with new document</div>
                 </button>
               </div>
             </div>
@@ -353,8 +426,16 @@ function App() {
               <h3 className="text-lg font-semibold text-gray-800 mb-4">System Status</h3>
               <div className="space-y-2">
                 <div className="flex items-center space-x-2">
-                  <div className="w-3 h-3 bg-green-500 rounded-full"></div>
-                  <span className="text-sm text-gray-600">Backend API: Online</span>
+                  <div className={`w-3 h-3 rounded-full ${
+                    systemStatus.backend === 'online' ? 'bg-green-500' :
+                    systemStatus.backend === 'offline' ? 'bg-red-500' : 'bg-yellow-500'
+                  }`}></div>
+                  <span className="text-sm text-gray-600">
+                    Backend API: {
+                      systemStatus.backend === 'online' ? 'Online' :
+                      systemStatus.backend === 'offline' ? 'Offline' : 'Checking...'
+                    }
+                  </span>
                 </div>
                 <div className="flex items-center space-x-2">
                   <div className="w-3 h-3 bg-yellow-500 rounded-full"></div>
@@ -364,6 +445,16 @@ function App() {
                   <div className="w-3 h-3 bg-green-500 rounded-full"></div>
                   <span className="text-sm text-gray-600">File Storage: Ready</span>
                 </div>
+                {systemStatus.backend === 'offline' && (
+                  <div className="mt-3 p-2 bg-red-50 rounded text-xs text-red-700">
+                    Backend is offline. Please start the Flask server.
+                  </div>
+                )}
+                {systemStatus.backend === 'online' && (
+                  <div className="mt-3 p-2 bg-green-50 rounded text-xs text-green-700">
+                    All systems operational
+                  </div>
+                )}
               </div>
             </div>
           </div>
