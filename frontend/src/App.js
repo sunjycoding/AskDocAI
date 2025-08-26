@@ -1,6 +1,24 @@
 import React, { useState } from 'react';
 import { Upload, FileText, MessageCircle, Download, Loader2, CheckCircle, AlertCircle } from 'lucide-react';
 
+// Dynamic backend URL detection for Codespace and local environments
+const getBackendUrl = () => {
+  // Check if running in Codespace
+  if (window.location.hostname.includes('github.dev') ||
+    window.location.hostname.includes('app.github.dev') ||
+    window.location.hostname.includes('-3000.')) {
+    // Extract the codespace URL pattern and modify port
+    const hostname = window.location.hostname;
+    // Replace the frontend port (3000) with backend port (5050)
+    const backendHostname = hostname.replace('-3000.', '-5050.');
+    return `https://${backendHostname}`;
+  }
+  // Local development
+  return 'http://127.0.0.1:5050';
+};
+
+const BACKEND_URL = getBackendUrl();
+
 function App() {
   const [selectedFile, setSelectedFile] = useState(null);
   const [uploadedDoc, setUploadedDoc] = useState(null);
@@ -21,16 +39,16 @@ function App() {
     if (file && file.type === 'application/pdf') {
       setSelectedFile(file);
       setLoading(true);
-      
+
       try {
         const formData = new FormData();
         formData.append('file', file);
-        
-        const response = await fetch('http://127.0.0.1:5000/api/upload', {
+
+        const response = await fetch(`${BACKEND_URL}/api/upload`, {
           method: 'POST',
           body: formData,
         });
-        
+
         if (response.ok) {
           const data = await response.json();
           setUploadedDoc({
@@ -48,7 +66,7 @@ function App() {
         }
       } catch (error) {
         console.error('Upload error:', error);
-        alert(`Network error: ${error.message}. Please make sure the backend is running on http://127.0.0.1:5000`);
+        alert(`Network error: ${error.message}. Backend URL: ${BACKEND_URL}`);
       } finally {
         setLoading(false);
       }
@@ -59,13 +77,13 @@ function App() {
 
   const generateSummary = async () => {
     if (!uploadedDoc) return;
-    
+
     setLoading(true);
     try {
-      const response = await fetch(`http://127.0.0.1:5000/api/document/${uploadedDoc.id}/content`, {
+      const response = await fetch(`${BACKEND_URL}/api/document/${uploadedDoc.id}/content`, {
         method: 'GET',
       });
-      
+
       if (response.ok) {
         const data = await response.json();
         setSummary(data.content); // 直接把提取的内容设置为summary
@@ -83,7 +101,7 @@ function App() {
 
   const askQuestion = async () => {
     if (!question.trim() || !uploadedDoc) return;
-    
+
     setLoading(true);
     setTimeout(() => {
       setAnswer(`Based on the uploaded document "${uploadedDoc.filename}", here's the answer to your question:
@@ -106,10 +124,10 @@ function App() {
   // Check backend status
   const checkBackendStatus = async () => {
     try {
-      const response = await fetch('http://127.0.0.1:5000/api/health', {
+      const response = await fetch(`${BACKEND_URL}/api/health`, {
         method: 'GET'
       });
-      
+
       if (response.ok) {
         setSystemStatus(prev => ({ ...prev, backend: 'online' }));
       } else {
@@ -117,11 +135,13 @@ function App() {
       }
     } catch (error) {
       setSystemStatus(prev => ({ ...prev, backend: 'offline' }));
+      console.log('Backend check failed. URL:', BACKEND_URL);
     }
   };
 
   // Check status on component mount and periodically
   React.useEffect(() => {
+    console.log('Backend URL:', BACKEND_URL);
     checkBackendStatus();
     const interval = setInterval(checkBackendStatus, 30000); // Check every 30 seconds
     return () => clearInterval(interval);
@@ -130,11 +150,10 @@ function App() {
   const TabButton = ({ id, label, icon: Icon, isActive, onClick }) => (
     <button
       onClick={() => onClick(id)}
-      className={`flex items-center space-x-2 px-6 py-3 rounded-lg font-medium transition-all duration-200 ${
-        isActive
-          ? 'bg-blue-600 text-white shadow-lg transform scale-105'
-          : 'bg-white text-gray-600 hover:bg-gray-50 hover:text-blue-600 shadow-md'
-      }`}
+      className={`flex items-center space-x-2 px-6 py-3 rounded-lg font-medium transition-all duration-200 ${isActive
+        ? 'bg-blue-600 text-white shadow-lg transform scale-105'
+        : 'bg-white text-gray-600 hover:bg-gray-50 hover:text-blue-600 shadow-md'
+        }`}
     >
       <Icon size={20} />
       <span>{label}</span>
@@ -157,7 +176,7 @@ function App() {
               </div>
             </div>
             <div className="text-sm text-gray-500">
-              Demo Version
+              Demo Version | {window.location.hostname.includes('github.dev') ? 'Codespace' : 'Local'}
             </div>
           </div>
         </div>
@@ -198,7 +217,7 @@ function App() {
               {activeTab === 'upload' && (
                 <div className="space-y-6">
                   <h2 className="text-2xl font-bold text-gray-800 mb-4">Upload Your Document</h2>
-                  
+
                   <div className="border-2 border-dashed border-gray-300 rounded-lg p-8 text-center hover:border-blue-400 transition-colors">
                     <Upload size={48} className="mx-auto text-gray-400 mb-4" />
                     <div className="space-y-2">
@@ -362,7 +381,7 @@ function App() {
             <div className="bg-white rounded-xl shadow-lg p-6">
               <h3 className="text-lg font-semibold text-gray-800 mb-4">Quick Actions</h3>
               <div className="space-y-3">
-                <button 
+                <button
                   onClick={() => {
                     if (uploadedDoc) {
                       const sampleQuestions = [
@@ -383,7 +402,7 @@ function App() {
                   <div className="font-medium text-gray-800">Sample Questions</div>
                   <div className="text-sm text-gray-600">Get question ideas</div>
                 </button>
-                <button 
+                <button
                   onClick={() => {
                     if (summary && uploadedDoc) {
                       const blob = new Blob([summary], { type: 'text/plain' });
@@ -402,7 +421,7 @@ function App() {
                   <div className="font-medium text-gray-800">Export Content</div>
                   <div className="text-sm text-gray-600">Download extracted text</div>
                 </button>
-                <button 
+                <button
                   onClick={() => {
                     if (window.confirm('This will clear the current session. Are you sure?')) {
                       setSelectedFile(null);
@@ -426,14 +445,13 @@ function App() {
               <h3 className="text-lg font-semibold text-gray-800 mb-4">System Status</h3>
               <div className="space-y-2">
                 <div className="flex items-center space-x-2">
-                  <div className={`w-3 h-3 rounded-full ${
-                    systemStatus.backend === 'online' ? 'bg-green-500' :
+                  <div className={`w-3 h-3 rounded-full ${systemStatus.backend === 'online' ? 'bg-green-500' :
                     systemStatus.backend === 'offline' ? 'bg-red-500' : 'bg-yellow-500'
-                  }`}></div>
+                    }`}></div>
                   <span className="text-sm text-gray-600">
                     Backend API: {
                       systemStatus.backend === 'online' ? 'Online' :
-                      systemStatus.backend === 'offline' ? 'Offline' : 'Checking...'
+                        systemStatus.backend === 'offline' ? 'Offline' : 'Checking...'
                     }
                   </span>
                 </div>
@@ -447,12 +465,16 @@ function App() {
                 </div>
                 {systemStatus.backend === 'offline' && (
                   <div className="mt-3 p-2 bg-red-50 rounded text-xs text-red-700">
-                    Backend is offline. Please start the Flask server.
+                    Backend is offline. Please ensure Flask server is running on port 5050.
+                    <br />
+                    Backend URL: {BACKEND_URL}
                   </div>
                 )}
                 {systemStatus.backend === 'online' && (
                   <div className="mt-3 p-2 bg-green-50 rounded text-xs text-green-700">
                     All systems operational
+                    <br />
+                    Backend: {BACKEND_URL}
                   </div>
                 )}
               </div>
