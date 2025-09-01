@@ -80,20 +80,26 @@ function App() {
 
     setLoading(true);
     try {
-      const response = await fetch(`${BACKEND_URL}/api/document/${uploadedDoc.id}/content`, {
-        method: 'GET',
+      const response = await fetch(`${BACKEND_URL}/api/summarize`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          document_id: uploadedDoc.id
+        })
       });
 
       if (response.ok) {
         const data = await response.json();
-        setSummary(data.content); // 直接把提取的内容设置为summary
+        setSummary(data.summary);
       } else {
         const errorData = await response.json();
-        alert(`Failed to get document content: ${errorData.error}`);
+        alert(`Failed to generate summary: ${errorData.error}`);
       }
     } catch (error) {
-      console.error('Error fetching document content:', error);
-      alert('Network error occurred while fetching document content.');
+      console.error('Error generating summary:', error);
+      alert('Network error occurred while generating summary.');
     } finally {
       setLoading(false);
     }
@@ -103,22 +109,31 @@ function App() {
     if (!question.trim() || !uploadedDoc) return;
 
     setLoading(true);
-    setTimeout(() => {
-      setAnswer(`Based on the uploaded document "${uploadedDoc.filename}", here's the answer to your question:
+    try {
+      const response = await fetch(`${BACKEND_URL}/api/ask`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          document_id: uploadedDoc.id,
+          question: question
+        })
+      });
 
-**Question**: ${question}
-
-**Answer**: According to the document, this topic is covered in Section 3.2. The key points include:
-
-1. The methodology follows established best practices in the field
-2. Implementation requires careful consideration of data quality and preprocessing steps
-3. Performance metrics should be evaluated using cross-validation techniques
-
-**Source References**: This information can be found on pages 15-18 of the document, specifically in the sections discussing implementation strategies and evaluation methods.
-
-*Note: This is a demo response. In the full implementation, answers would be generated using RAG (Retrieval-Augmented Generation) with actual document content.*`);
+      if (response.ok) {
+        const data = await response.json();
+        setAnswer(data.answer);
+      } else {
+        const errorData = await response.json();
+        alert(`Failed to get answer: ${errorData.error}`);
+      }
+    } catch (error) {
+      console.error('Error asking question:', error);
+      alert('Network error occurred while asking question.');
+    } finally {
       setLoading(false);
-    }, 2000);
+    }
   };
 
   // Check backend status
@@ -294,12 +309,6 @@ function App() {
                           {summary}
                         </div>
                       </div>
-                      <div className="mt-4 pt-4 border-t">
-                        <button className="bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 transition-colors flex items-center space-x-2">
-                          <Download size={16} />
-                          <span>Download Summary</span>
-                        </button>
-                      </div>
                     </div>
                   )}
                 </div>
@@ -308,7 +317,39 @@ function App() {
               {/* Q&A Tab */}
               {activeTab === 'qa' && (
                 <div className="space-y-6">
-                  <h2 className="text-2xl font-bold text-gray-800">Ask Questions</h2>
+                  <div className="flex items-center justify-between">
+                    <h2 className="text-2xl font-bold text-gray-800">Ask Questions</h2>
+                    {uploadedDoc && (
+                      <button
+                        onClick={async () => {
+                          try {
+                            const response = await fetch(`${BACKEND_URL}/api/document/${uploadedDoc.id}/download`);
+                            if (response.ok) {
+                              const data = await response.json();
+                              const blob = new Blob([data.content], { type: 'text/plain' });
+                              const url = URL.createObjectURL(blob);
+                              const a = document.createElement('a');
+                              a.href = url;
+                              a.download = data.filename;
+                              document.body.appendChild(a);
+                              a.click();
+                              document.body.removeChild(a);
+                              URL.revokeObjectURL(url);
+                            } else {
+                              alert('Failed to download summary');
+                            }
+                          } catch (error) {
+                            console.error('Download error:', error);
+                            alert('Error downloading summary');
+                          }
+                        }}
+                        className="bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 transition-colors flex items-center space-x-2"
+                      >
+                        <Download size={16} />
+                        <span>Download Summary & Q&A</span>
+                      </button>
+                    )}
+                  </div>
 
                   {!uploadedDoc && (
                     <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
