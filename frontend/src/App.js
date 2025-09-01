@@ -251,6 +251,70 @@ function App() {
                     />
                   </div>
 
+                  <div className="mt-6">
+                    <div className="relative">
+                      <div className="absolute inset-0 flex items-center">
+                        <div className="w-full border-t border-gray-300" />
+                      </div>
+                      <div className="relative flex justify-center text-sm">
+                        <span className="px-2 bg-white text-gray-500">OR</span>
+                      </div>
+                    </div>
+
+                    <div className="mt-6">
+                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                        Upload from Web URL
+                      </label>
+                      <div className="flex space-x-2">
+                        <input
+                          type="url"
+                          placeholder="https://example.com/article"
+                          className="flex-1 px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                          id="url-input"
+                        />
+                        <button
+                          onClick={async () => {
+                            const urlInput = document.getElementById('url-input');
+                            const url = urlInput.value;
+                            if (!url) return;
+
+                            setLoading(true);
+                            try {
+                              const response = await fetch(`${BACKEND_URL}/api/upload-url`, {
+                                method: 'POST',
+                                headers: { 'Content-Type': 'application/json' },
+                                body: JSON.stringify({ url })
+                              });
+
+                              if (response.ok) {
+                                const data = await response.json();
+                                setUploadedDoc({
+                                  id: data.document_id,
+                                  filename: data.domain,
+                                  content_length: data.content_length,
+                                  created_at: new Date().toISOString(),
+                                  content_preview: data.content_preview
+                                });
+                                setActiveTab('summary');
+                                alert('Web content uploaded successfully!');
+                              } else {
+                                const error = await response.json();
+                                alert(`Failed: ${error.error}`);
+                              }
+                            } catch (error) {
+                              alert(`Error: ${error.message}`);
+                            } finally {
+                              setLoading(false);
+                            }
+                          }}
+                          className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+                        >
+                          Fetch URL
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+
                   {loading && (
                     <div className="flex items-center justify-center py-8">
                       <Loader2 className="animate-spin text-blue-600 mr-3" size={24} />

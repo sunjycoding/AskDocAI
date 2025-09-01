@@ -15,6 +15,13 @@ CORS(app, origins=['*'])
 # In-memory storage for demo
 documents = {}
 
+metrics = {
+    'total_uploads': 0,
+    'total_summaries': 0,
+    'total_questions': 0,
+    'avg_response_time': []
+}
+
 # Initialize RAG system
 try:
     rag = SimplifiedRAG()
@@ -119,6 +126,8 @@ def upload_document():
             rag.index_document(document_id, content)
             print(f"Document {document_id[:8]} indexed in RAG system")
         
+        metrics['total_uploads'] += 1
+
         return jsonify({
             'document_id': document_id,
             'message': 'PDF uploaded and processed successfully',
@@ -129,6 +138,83 @@ def upload_document():
         
     except Exception as e:
         return jsonify({'error': f'Upload failed: {str(e)}'}), 500
+
+@app.route('/api/upload-url', methods=['POST'])
+def upload_from_url():
+    """Extract content from web URL"""
+    try:
+        from urllib.parse import urlparse
+        import re
+        
+        data = request.json
+        url = data.get('url')
+        
+        if not url:
+            return jsonify({'error': 'URL is required'}), 400
+        
+        # Validate URL format
+        if not url.startswith(('http://', 'https://')):
+            url = 'https://' + url
+        
+        # Fetch webpage content
+        response = requests.get(url, timeout=10, headers={
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+        })
+        
+        if response.status_code != 200:
+            return jsonify({'error': f'Failed to fetch URL: {response.status_code}'}), 400
+        
+        # Simple HTML text extraction
+        text = response.text
+        # Remove script and style elements
+        text = re.sub(r'<script[^>]*>.*?</script>', '', text, flags=re.DOTALL)
+        text = re.sub(r'<style[^>]*>.*?</style>', '', text, flags=re.DOTALL)
+        # Remove HTML tags
+        text = re.sub('<[^<]+?>', ' ', text)
+        # Clean whitespace
+        text = re.sub(r'\s+', ' ', text)
+        text = text.strip()
+        
+        if not text or len(text) < 100:
+            return jsonify({'error': 'Could not extract enough text from URL'}), 400
+        
+        # Create document entry
+        document_id = str(uuid.uuid4())
+        domain = urlparse(url).netloc
+        
+        documents[document_id] = {
+            'id': document_id,
+            'filename': f"Web: {domain}",
+            'content': text[:10000],  # Limit to 10000 chars
+            'content_length': len(text),
+            'created_at': datetime.now().isoformat(),
+            'summary': None,
+            'qa_history': [],
+            'source_type': 'web',
+            'source_url': url
+        }
+        
+        # Index with RAG if available
+        if RAG_AVAILABLE and rag:
+            rag.index_document(document_id, text[:10000])
+            print(f"Web content {document_id[:8]} indexed in RAG system")
+        
+        # Update metrics
+        metrics['total_uploads'] += 1
+        
+        return jsonify({
+            'document_id': document_id,
+            'message': 'Web content extracted successfully',
+            'url': url,
+            'domain': domain,
+            'content_length': len(text),
+            'content_preview': text[:200] + '...' if len(text) > 200 else text
+        }), 201
+        
+    except requests.Timeout:
+        return jsonify({'error': 'URL request timed out'}), 408
+    except Exception as e:
+        return jsonify({'error': f'Failed to extract web content: {str(e)}'}), 500
 
 @app.route('/api/summarize', methods=['POST'])
 def summarize_document():
@@ -155,6 +241,9 @@ Summary:"""
         
         if summary:
             documents[document_id]['summary'] = summary
+            
+            metrics['total_summaries'] += 1
+            
             return jsonify({
                 'document_id': document_id,
                 'summary': summary
@@ -213,6 +302,8 @@ Answer:"""
                 'answer': answer,
                 'timestamp': datetime.now().isoformat()
             })
+
+            metrics['total_questions'] += 1
             
             return jsonify({
                 'document_id': document_id,
