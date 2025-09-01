@@ -243,7 +243,7 @@ Summary:"""
             documents[document_id]['summary'] = summary
             
             metrics['total_summaries'] += 1
-            
+
             return jsonify({
                 'document_id': document_id,
                 'summary': summary
@@ -256,7 +256,7 @@ Summary:"""
 
 @app.route('/api/ask', methods=['POST'])
 def ask_question():
-    """Answer questions using RAG retrieval"""
+    """Answer questions about the document using relevant chunks"""
     try:
         data = request.json
         document_id = data.get('document_id')
@@ -270,45 +270,62 @@ def ask_question():
         
         doc = documents[document_id]
         
+        # Track which chunks were used
+        used_chunks = []
+        
         # Use RAG to retrieve relevant chunks
         if RAG_AVAILABLE and rag:
             relevant_chunks = rag.retrieve(document_id, question, top_k=3)
             if relevant_chunks:
                 context = '\n\n'.join(relevant_chunks)
+                used_chunks = relevant_chunks[:2]  # Save first 2 chunks as sources
                 print(f"Retrieved {len(relevant_chunks)} relevant chunks")
             else:
-                # Fallback to original method
                 context = doc['content'][:2000]
+                used_chunks = [doc['content'][:500]]  # Use beginning as source
         else:
-            # Fallback if RAG not available
             context = doc['content'][:2000]
+            used_chunks = [doc['content'][:500]]
         
+        # Updated prompt to include citation instruction
         prompt = f"""Based on the following document excerpts, answer the question accurately.
-If the answer is not in the provided text, say so.
+Include specific references to the information source when possible.
 
 Document excerpts:
 {context}
 
 Question: {question}
 
-Answer:"""
+Answer (cite the document when referencing specific information):"""
         
         answer = call_ollama(prompt)
         
         if answer:
-            # Store Q&A history
+            # Build source reference
+            source_info = {
+                'document': doc['filename'],
+                'type': doc.get('source_type', 'pdf'),
+                'url': doc.get('source_url', None),
+                'excerpt': used_chunks[0][:200] + '...' if used_chunks else None
+            }
+            
+            # Store Q&A history with source
             doc['qa_history'].append({
                 'question': question,
                 'answer': answer,
+                'sources': source_info,
                 'timestamp': datetime.now().isoformat()
             })
-
+            
+            # Update metrics
             metrics['total_questions'] += 1
             
             return jsonify({
                 'document_id': document_id,
                 'question': question,
                 'answer': answer,
+                'source_reference': f"Source: {doc['filename']}",
+                'source_details': source_info,
                 'method': 'RAG' if RAG_AVAILABLE else 'fallback'
             }), 200
         else:
@@ -424,16 +441,22 @@ def clean_extracted_text(text):
 
 @app.route('/api/document/<document_id>/download', methods=['GET'])
 def download_summary(document_id):
-    """Download document summary and Q&A results"""
+    """Download document summary and Q&A results with sources"""
     try:
         if document_id not in documents:
             return jsonify({'error': 'Document not found'}), 404
         
         doc = documents[document_id]
         
-        # Prepare download content
-        download_content = f"""Document: {doc['filename']}
-Generated on: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
+        # Prepare download content with better formatting
+        download_content = f"""===============================
+ASKDOCAI DOCUMENT ANALYSIS REPORT
+===============================
+
+Document: {doc['filename']}
+Type: {doc.get('source_type', 'PDF').upper()}
+Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
+{'URL: ' + doc.get('source_url', '') if doc.get('source_url') else ''}
 
 ===============================
 DOCUMENT SUMMARY
@@ -442,27 +465,52 @@ DOCUMENT SUMMARY
 
 """
         
-        # Add Q&A history if exists
+        # Add Q&A history with sources
         if doc['qa_history']:
-            download_content += """
-===============================
-QUESTIONS & ANSWERS
+            download_content += """===============================
+QUESTIONS & ANSWERS WITH SOURCES
 ===============================
 """
             for i, qa in enumerate(doc['qa_history'], 1):
                 download_content += f"""
-Q{i}: {qa['question']}
-A{i}: {qa['answer']}
+Question {i}: {qa['question']}
+
+Answer: {qa['answer']}
+
+Source: {qa.get('sources', {}).get('document', 'Unknown')}
+Timestamp: {qa['timestamp']}
 ---
 """
         
+        # Add metrics summary
+        download_content += f"""
+===============================
+DOCUMENT METRICS
+===============================
+Total Questions Asked: {len(doc['qa_history'])}
+Document Size: {doc['content_length']} characters
+Analysis Method: {'RAG-enhanced' if RAG_AVAILABLE else 'Direct extraction'}
+"""
+        
         return jsonify({
-            'filename': f"{doc['filename']}_summary.txt",
+            'filename': f"{doc['filename'].replace(':', '').replace('/', '_')}_analysis.txt",
             'content': download_content
         }), 200
         
     except Exception as e:
         return jsonify({'error': str(e)}), 500
+
+@app.route('/api/metrics', methods=['GET'])
+def get_metrics():
+    """Get system performance metrics"""
+    return jsonify({
+        'total_uploads': metrics['total_uploads'],
+        'total_summaries': metrics['total_summaries'],
+        'total_questions': metrics['total_questions'],
+        'documents_in_memory': len(documents),
+        'rag_enabled': RAG_AVAILABLE,
+        'model_used': OLLAMA_MODEL if 'OLLAMA_MODEL' in globals() else 'none'
+    }), 200
 
 if __name__ == '__main__':
     app.run(debug=True, port=5050)
