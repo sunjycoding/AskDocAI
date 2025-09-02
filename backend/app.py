@@ -42,7 +42,14 @@ def call_ollama(prompt):
             json={
                 'model': OLLAMA_MODEL,
                 'prompt': prompt,
-                'stream': False
+                'stream': False,
+                'options': {
+                    'temperature': 0.3,
+                    'top_p': 0.9,
+                    'top_k': 40,
+                    'seed': 42,
+                    'num_predict': 250
+                }
             },
             timeout=30
         )
